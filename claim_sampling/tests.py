@@ -3,7 +3,6 @@ from django.test import TestCase
 from unittest import mock
 
 from claim.services import ClaimSubmitService
-from claim.tests.tests import DummyContext
 from core.test_helpers import create_test_interactive_user, create_test_officer
 from location.test_helpers import create_test_location, create_test_health_facility, create_test_village
 from insuree.test_helpers import create_test_insuree
@@ -20,6 +19,8 @@ from .models import (
 
 from .services import ClaimSamplingService
 import core
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase, BaseTestContext as DummyContext
+
 from graphene import Schema
 from graphene_django.utils.testing import GraphQLTestCase
 from claim_sampling import schema as claim_schema
@@ -29,7 +30,7 @@ from product.test_helpers import create_test_product, create_test_product_servic
 from medical_pricelist.test_helpers import add_service_to_hf_pricelist, add_item_to_hf_pricelist
 from product.models import ProductItemOrService
 from datetime import date, timedelta, datetime
-class ClaimSubmitServiceTestCase(GraphQLTestCase):
+class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     GRAPHQL_URL = f'/{settings.SITE_ROOT()}graphql'
     # This is required by some version of graphene but is never used. It should be set to the schema but the import
     # is shown as an error in the IDE, so leaving it as True.
