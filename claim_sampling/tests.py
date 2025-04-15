@@ -168,7 +168,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     def test_mutation_create_claim( self):
         
         percentage_for_sample = 20
-        response = self.query(f'''
+        mutation = f'''
 mutation {{
   createClaimSamplingBatch(
     input: {{
@@ -182,7 +182,9 @@ mutation {{
     internalId
   }}    
 }}
-            ''', headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"})
+            '''
+        response = self.send_mutation_raw(mutation,self.admin_token )
+        
 
         claim_sampling = ClaimSamplingBatch.objects.first()
         self.assertIsNotNone(claim_sampling)
