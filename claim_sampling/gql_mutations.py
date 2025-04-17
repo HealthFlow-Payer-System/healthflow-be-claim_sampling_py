@@ -16,7 +16,8 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 
 from claim.gql_mutations import ClaimCodeInputType, ClaimGuaranteeIdInputType, FeedbackInputType
-from claim.models import ClaimAdmin, Claim
+from core.models.user import ClaimAdmin
+from claim.models import Claim
 
 from django.db import transaction
 
