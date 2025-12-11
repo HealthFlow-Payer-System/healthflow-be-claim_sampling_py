@@ -1,11 +1,10 @@
 import logging
 
-from claim.models import Claim
-from claim_sampling.models import ClaimSamplingBatchAssignment
 from claim_sampling.services import ClaimSamplingService
 from core.models import User
 from core.service_signals import ServiceSignalBindType
 from core.signals import bind_service_signal
+from django.db import transaction
 
 from tasks_management.apps import TasksManagementConfig
 from tasks_management.models import Task
@@ -16,9 +15,7 @@ logger = logging.getLogger(__name__)
 def _resolve_task_any(_task: Task, _user: User):
     claim_sampling_id = _task.data['data']['uuid']
     claim_sampling_service = ClaimSamplingService(user=_user)
-
-    rejected_from_review = claim_sampling_service\
-        .extrapolate_results(claim_sampling_id)
+    claim_sampling_service.extrapolate_results(claim_sampling_id)
 
 
 def _resolve_task_all(_task, _user):
@@ -56,8 +53,8 @@ def on_claim_sampling_resolve_task(**kwargs):
             if task.task_group.completion_policy not in resolvers:
                 logger.error("Resolving task with unknown completion_policy: %s", task.task_group.completion_policy)
                 return ['Unknown completion_policy: %s' % task.task_group.completion_policy]
-
-            resolvers[task.task_group.completion_policy](task, user)
+            with transaction.atomic():
+                resolvers[task.task_group.completion_policy](task, user)
     except Exception as e:
         logger.error("Error while executing on_task_resolve", exc_info=e)
         return [str(e)]

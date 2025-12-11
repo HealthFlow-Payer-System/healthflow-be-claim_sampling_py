@@ -1,18 +1,17 @@
-from enum import Enum
 
-from django.db.models import OuterRef, Subquery, Avg, Q
-import graphene_django_optimizer as gql_optimizer
 from core.schema import OrderedDjangoFilterConnectionField
-from core import filter_validity
 from django.conf import settings
 from claim_sampling.gql_queries import ClaimSamplingSummaryGQLType, ClaimSamplingBatchGQLType, ClaimSamplingBatchAssignmentGQLType
 from django.utils.translation import gettext as _
-from claim_sampling.gql_mutations import *  # lgtm [py/polluting-import]
-from django.core.exceptions import PermissionDenied
-
+from claim_sampling.gql_mutations import CreateClaimSamplingBatchMutation, UpdateClaimSamplingBatchMutation, ApproveClaimSamplingBatchMutation
+import graphene
 from claim_sampling.models import ClaimSamplingBatch, ClaimSamplingBatchAssignment
 from claim.models import Claim
+from .apps import ClaimSamplingConfig
 from tasks_management.models import Task
+from rest_framework.exceptions import PermissionDenied
+from claim.gql_queries import ClaimGQLType
+from .services import ClaimSamplingService
 
 
 class Query(graphene.ObjectType):
@@ -96,8 +95,8 @@ class Query(graphene.ObjectType):
             rejected_from_review, reviewed_delivered, total = claim_sampling_service.prepare_sampling_summary(
                 claim_sampling_id)
 
-            review_delivered = round(reviewed_delivered.count()/total, 2)*100
-            percentage = round(rejected_from_review.count()/total, 2)*100
+            review_delivered = round(reviewed_delivered.count() / total, 2) * 100
+            percentage = round(rejected_from_review.count() / total, 2) * 100
 
             return ClaimSamplingSummaryGQLType(
                 deductible_percentage=percentage,

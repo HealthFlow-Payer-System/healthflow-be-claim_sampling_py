@@ -2,26 +2,21 @@ import random
 import uuid
 from typing import List
 
-from claim.apps import ClaimConfig
 from claim.models import (
-    Claim, ClaimItem, ClaimService, 
+    Claim, ClaimItem, ClaimService,
 )
-    
-from enum import Enum
+
 from django.db.models import (
-    OuterRef, Subquery, Avg, Q, Sum, F, ExpressionWrapper, 
-    FloatField, DecimalField,  Subquery, OuterRef, Case, Value, When
+    Q, Sum, F, ExpressionWrapper, DecimalField
 )
-from django.db.models.functions import Coalesce
-from django.db import transaction
 from django.utils.translation import gettext as _
 
 from claim.services import (
-    set_claims_status, update_claims_dedrems, processing_claim,
+    set_claims_status, processing_claim,
 )
-from claim.subqueries import (   
+from claim.subqueries import (
     total_srv_adjusted_exp, total_itm_adjusted_exp,
-    total_srv_approved_exp, total_itm_approved_exp,elm_approved_exp,update_claim_approved, elm_adjusted_exp,elm_approved_exp
+    total_srv_approved_exp, total_itm_approved_exp, update_claim_approved
 )
 from claim_sampling.models import (
     ClaimSamplingBatch,
@@ -44,7 +39,7 @@ class IndividualDataSourceValidation(BaseModelValidation):
 class ClaimSamplingService(BaseService):
     OBJECT_TYPE = ClaimSamplingBatch
 
-    @transaction.atomic
+    # @transaction.atomic
     @register_service_signal('claim_sampling_service.create')
     def create(self, obj_data, task_group: TaskGroup = None):
         """
@@ -96,12 +91,12 @@ class ClaimSamplingService(BaseService):
             claim = Claim.objects.get(uuid=next_claim)
             should_be_reviewed = is_selected_for_review.pop()
             batches.append(ClaimSamplingBatchAssignment(
-             uuid=uuid.uuid4(),
-             claim=claim,
-             claim_batch=sampling_batch,
-             status=should_be_reviewed,
-             user_created=self.user,
-             user_updated=self.user
+                uuid=uuid.uuid4(),
+                claim=claim,
+                claim_batch=sampling_batch,
+                status=should_be_reviewed,
+                user_created=self.user,
+                user_updated=self.user
             ))
             if claim.review_status in [Claim.REVIEW_IDLE, Claim.REVIEW_NOT_SELECTED] \
                     and should_be_reviewed == ClaimSamplingBatchAssignmentStatus.IDLE:
@@ -110,7 +105,7 @@ class ClaimSamplingService(BaseService):
                 claim.save()
 
         ClaimSamplingBatchAssignment.objects.bulk_create(batches)
-        task = self._create_sampling_task(sampling_batch_data, sampling_batch, task_group)
+        self._create_sampling_task(sampling_batch_data, sampling_batch, task_group)
         return sampling_batch
 
     @register_service_signal('claim_sampling_service.update')
@@ -122,15 +117,15 @@ class ClaimSamplingService(BaseService):
         return super().delete(obj_data)
 
     def __filter_already_assigned(self, claim_batch_ids):
-        filtered_claim_batch_ids = claim_batch_ids.exclude(id__in=ClaimSamplingBatchAssignment.objects.filter(claim__uuid__in=claim_batch_ids).values("claim"))
+        filtered_claim_batch_ids = claim_batch_ids.exclude(id__in=ClaimSamplingBatchAssignment.objects.filter(claim__uuid__in=claim_batch_ids).values("claim_id"))
         return filtered_claim_batch_ids
 
-    @transaction.atomic
+    #  @transaction.atomic
     def extrapolate_results(self, claim_sampling_id):
         claim_sampling = ClaimSamplingBatch.objects.get(id=claim_sampling_id)
 
         qs = Claim.objects.filter(assignments__claim_batch=claim_sampling, *filter_validity())
-        
+
         deductible = qs.filter(review_status=Claim.REVIEW_DELIVERED)\
             .filter(Q(services__rejection_reason__lte=0) | Q(services__rejection_reason__isnull=True))\
             .annotate(total_srv_adjusted=total_srv_adjusted_exp)\
@@ -139,19 +134,18 @@ class ClaimSamplingService(BaseService):
             .annotate(total_itm_approved=total_itm_approved_exp)\
             .aggregate(value=ExpressionWrapper(
                 (Sum("total_srv_approved") + Sum("total_itm_approved")) /
-                ( Sum("total_srv_adjusted") + Sum("total_itm_adjusted")),
+                (Sum("total_srv_adjusted") + Sum("total_itm_adjusted")),
                 output_field=DecimalField()
             ))["value"]
 
         # Filter claims for extrapolation
         qs_extrapolated = qs.filter(
-            assignments__status=ClaimSamplingBatchAssignmentStatus.SKIPPED, 
+            assignments__status=ClaimSamplingBatchAssignmentStatus.SKIPPED,
             review_status=Claim.REVIEW_IDLE
         )
-        
+
         # update the items and services
         deductible = float(deductible or 0)
-        
 
         # update service and item
         ClaimItem.objects.filter(claim__in=qs_extrapolated).update(price_approved=deductible * F("price_adjusted"))
@@ -178,7 +172,7 @@ class ClaimSamplingService(BaseService):
         for item in claim_items:
             new_claim_item = item
             if new_claim_item.price_approved:
-                new_claim_item.price_approved *= (100-deduction_rate)/100
+                new_claim_item.price_approved *= (100 - deduction_rate) / 100
                 new_claim_item.save()
 
         claim_services = claim.services.all()
@@ -186,7 +180,7 @@ class ClaimSamplingService(BaseService):
         for service in claim_services:
             new_claim_service = service
             if new_claim_service.price_approved:
-                new_claim_service.price_approved *= (100-deduction_rate)/100
+                new_claim_service.price_approved *= (100 - deduction_rate) / 100
                 new_claim_service.save()
 
     def _get_sampling_claims(self, claim_sampling_id, include_skip=False):
@@ -207,7 +201,7 @@ class ClaimSamplingService(BaseService):
         super().__init__(user, validation_class)
 
     def __choose_random_claims_for_review(self, total_elements: int, percentage: int):
-        selected_for_review = int((percentage/100.0) * total_elements)
+        selected_for_review = int((percentage / 100.0) * total_elements)
         not_selected = total_elements - selected_for_review
 
         # Ensure at least one claim is selected for review
