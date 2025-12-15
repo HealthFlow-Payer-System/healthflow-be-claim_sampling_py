@@ -124,7 +124,7 @@ class ClaimSamplingService(BaseService):
     def extrapolate_results(self, claim_sampling_id):
         claim_sampling = ClaimSamplingBatch.objects.get(id=claim_sampling_id)
 
-        qs = Claim.objects.filter(assignments__claim_batch=claim_sampling, *filter_validity())
+        qs = Claim.objects.filter(assignments__claim_batch=claim_sampling, *Claim.filter_validity())
 
         deductible = qs.filter(review_status=Claim.REVIEW_DELIVERED)\
             .filter(Q(services__rejection_reason__lte=0) | Q(services__rejection_reason__isnull=True))\

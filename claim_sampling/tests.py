@@ -112,11 +112,11 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     def _create_test_claims(cls, product):
         test_item = create_test_item(
             'D',
-            custom_props={"code": "csamCo", "price": 1000}
+            custom_props={"code": "TI-001", "price": 1000}
         )
         test_service = create_test_service(
             'D',
-            custom_props={"code": "ssamCo", "price": 1000}
+            custom_props={"code": "TS-001", "price": 1000}
         )
         create_test_product_service(
             product,
