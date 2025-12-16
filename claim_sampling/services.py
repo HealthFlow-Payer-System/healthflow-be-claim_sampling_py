@@ -26,7 +26,6 @@ from claim_sampling.models import (
 from core.services import BaseService
 from core.signals import register_service_signal
 from core.validation import BaseModelValidation
-from core import filter_validity
 from tasks_management.apps import TasksManagementConfig
 from tasks_management.models import Task, TaskGroup
 from tasks_management.services import TaskService, _get_std_task_data_payload
