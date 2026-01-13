@@ -1,5 +1,5 @@
 import uuid
-from claim.services import ClaimSubmitService
+from claim.services import processing_claim, ClaimSubmitService
 from core.test_helpers import create_test_interactive_user, create_test_officer
 from location.test_helpers import create_test_health_facility, create_test_village
 from insuree.test_helpers import create_test_insuree
@@ -73,6 +73,10 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
 
     @classmethod
     def setUpClass(cls):
+        
+        cls.dateclaimed = date.today() - timedelta(days=5)
+        cls.datetimeclaimed = datetime.now() - timedelta(days=5)
+        cls.datestart = date.today() - timedelta(days=55)
         cls.schema = Schema(
             query=claim_schema.Query,
             mutation=claim_schema.Mutation
@@ -101,7 +105,15 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         )
         cls.test_insuree = create_test_insuree(is_head=True, custom_props=props, family_custom_props=family_props)
         product = create_test_product("TEST_CLM")
-        cls.test_policy, ip = create_test_policy2(product, cls.test_insuree)
+        cls.test_policy, ip = create_test_policy2(
+            product,
+            cls.test_insuree,
+            custom_props={
+                "enroll_date": cls.datestart,
+                "start_date": cls.datestart,
+                "validity_from": cls.datestart,
+                "effective_date": cls.datestart,
+            })
         cls.test_claim_admin = create_test_claim_admin()
         cls.test_icd = Diagnosis(code='ICD00I', name='diag test', audit_user_id=-1)
         cls.test_icd.save()
@@ -131,22 +143,20 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         add_service_to_hf_pricelist(test_service, hf_id=cls.test_hf.id)
         add_item_to_hf_pricelist(test_item, hf_id=cls.test_hf.id)
 
-        dateclaim = date.today() - timedelta(days=5)
-        datetimeclaim = datetime.now() - timedelta(days=5)
         for i in range(10):
             claim = Claim.objects.create(
-                date_claimed=dateclaim,
+                date_claimed=cls.dateclaimed,
                 code=F"code_ABV{i}",
                 icd=cls.test_icd,
                 claimed=2000,
-                date_from=dateclaim,
+                date_from=cls.dateclaimed,
                 date_to=None,
                 admin=cls.test_claim_admin,
                 insuree=cls.test_insuree,
                 health_facility=cls.test_hf,
                 status=Claim.STATUS_ENTERED,
                 audit_user_id=-1,
-                validity_from=datetimeclaim
+                validity_from=cls.datetimeclaimed
             )
             ClaimItem.objects.create(
                 claim=claim,
@@ -156,7 +166,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
                 availability=True,
-                validity_from=datetimeclaim
+                validity_from=cls.datetimeclaimed
             )
             ClaimService.objects.create(
                 claim=claim,
@@ -165,10 +175,11 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
                 qty_provided=1,
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
-                validity_from=datetimeclaim
+                validity_from=cls.datetimeclaimed
             )
-            claim.refresh_from_db()
             ClaimSubmitService(cls.admin_user).submit_claim(claim)
+            processing_claim(claim, cls.admin_user, False)
+            claim.refresh_from_db()
             cls.test_claims.append(claim)
 
     @classmethod
@@ -188,7 +199,7 @@ mutation {{
       clientMutationId: "{str(uuid.uuid4())}"
       clientMutationLabel: "Create Claim Sampling Batch"
       percentage: {percentage_for_sample}
-      filters: "{{\\"status\\":4, \\"dateFrom\\": \\"{date.today() - timedelta(days=5)}\\"}}"
+      filters: "{{\\"status\\":4, \\"dateFrom\\": \\"{self.dateclaimed}\\"}}"
     }}
   ) {{
     clientMutationId

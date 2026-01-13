@@ -110,7 +110,7 @@ class CreateClaimSamplingBatchMutation(OpenIMISMutation):
                 logging.debug("Error in claim sampling mutation: ", exc)
                 traceback.print_exc()
             return [{
-                'message': _("claim.mutation.failed_to_create_claim_sampling_batch") % {'code': data['code']},
+                'message': _("claim.mutation.failed_to_create_claim_sampling_batch"),
                 'detail': str(exc)}]
 
 
