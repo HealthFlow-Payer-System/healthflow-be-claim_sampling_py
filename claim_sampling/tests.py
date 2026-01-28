@@ -95,8 +95,8 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
 
         cls.test_hf = create_test_health_facility("1", cls.test_district.id, valid=True)
         props = dict(
-            last_name="name",
-            other_names="surname",
+            last_name="claim",
+            other_names="sampling",
             dob=core.datetime.date(2000, 1, 13),
             chf_id="884930485",
         )
@@ -104,7 +104,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             location=cls.test_village,
         )
         cls.test_insuree = create_test_insuree(is_head=True, custom_props=props, family_custom_props=family_props)
-        product = create_test_product("TEST_CLM")
+        product = create_test_product("T_CLMSMP")
         cls.test_policy, ip = create_test_policy2(
             product,
             cls.test_insuree,
@@ -122,11 +122,11 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     def _create_test_claims(self, product, nbr_claims=10):
         test_item = create_test_item(
             'D',
-            custom_props={"code": "TI-001", "price": 1000}
+            custom_props={"code": "TI-001", "price": 1000, "care_type": "B"}
         )
         test_service = create_test_service(
             'D',
-            custom_props={"code": "TS-001", "price": 1000}
+            custom_props={"code": "TS-001", "price": 1000, "care_type": "B"}
         )
         create_test_product_service(
             product,
