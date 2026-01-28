@@ -118,10 +118,8 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         cls.test_icd = Diagnosis(code='ICD00I', name='diag test', audit_user_id=-1)
         cls.test_icd.save()
 
-        cls._create_test_claims(cls.test_policy.product)
 
-    @classmethod
-    def _create_test_claims(cls, product):
+    def _create_test_claims(self, product, nbr_claims=10):
         test_item = create_test_item(
             'D',
             custom_props={"code": "TI-001", "price": 1000}
@@ -140,23 +138,23 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             test_item,
             custom_props={"price_origin": ProductItemOrService.ORIGIN_RELATIVE},
         )
-        add_service_to_hf_pricelist(test_service, hf_id=cls.test_hf.id)
-        add_item_to_hf_pricelist(test_item, hf_id=cls.test_hf.id)
+        add_service_to_hf_pricelist(test_service, hf_id=self.test_hf.id)
+        add_item_to_hf_pricelist(test_item, hf_id=self.test_hf.id)
 
-        for i in range(10):
+        for i in range(nbr_claims):
             claim = Claim.objects.create(
-                date_claimed=cls.dateclaimed,
+                date_claimed=self.dateclaimed,
                 code=F"code_ABV{i}",
-                icd=cls.test_icd,
+                icd=self.test_icd,
                 claimed=2000,
-                date_from=cls.dateclaimed,
+                date_from=self.dateclaimed,
                 date_to=None,
-                admin=cls.test_claim_admin,
-                insuree=cls.test_insuree,
-                health_facility=cls.test_hf,
+                admin=self.test_claim_admin,
+                insuree=self.test_insuree,
+                health_facility=self.test_hf,
                 status=Claim.STATUS_ENTERED,
                 audit_user_id=-1,
-                validity_from=cls.datetimeclaimed
+                validity_from=self.datetimeclaimed
             )
             ClaimItem.objects.create(
                 claim=claim,
@@ -166,7 +164,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
                 availability=True,
-                validity_from=cls.datetimeclaimed
+                validity_from=self.datetimeclaimed
             )
             ClaimService.objects.create(
                 claim=claim,
@@ -175,12 +173,12 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
                 qty_provided=1,
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
-                validity_from=cls.datetimeclaimed
+                validity_from=self.datetimeclaimed
             )
-            ClaimSubmitService(cls.admin_user).submit_claim(claim)
-            processing_claim(claim, cls.admin_user, False)
+            ClaimSubmitService(self.admin_user).submit_claim(claim)
+            processing_claim(claim, self.admin_user, False)
             claim.refresh_from_db()
-            cls.test_claims.append(claim)
+            self.test_claims.append(claim)
 
     @classmethod
     def _set_claim_as_valuated(cls, claim, user, is_process=False):
@@ -190,7 +188,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         return []
 
     def test_mutation_create_claim(self):
-
+        self._create_test_claims(self.test_policy.product, nbr_claims=10)
         percentage_for_sample = 30
         mutation = f'''
 mutation {{
@@ -199,7 +197,7 @@ mutation {{
       clientMutationId: "{str(uuid.uuid4())}"
       clientMutationLabel: "Create Claim Sampling Batch"
       percentage: {percentage_for_sample}
-      filters: "{{\\"status\\":4, \\"dateFrom\\": \\"{self.dateclaimed}\\"}}"
+      filters: "{{\\"status\\":4, \\"dateClaimed\\": \\"{self.dateclaimed}\\"}}"
     }}
   ) {{
     clientMutationId
