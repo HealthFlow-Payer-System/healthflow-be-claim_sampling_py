@@ -137,8 +137,8 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             test_item,
             custom_props={"price_origin": ProductItemOrService.ORIGIN_RELATIVE},
         )
-        add_service_to_hf_pricelist(test_service, hf_id=self.test_hf)
-        add_item_to_hf_pricelist(test_item, hf_id=self.test_hf)
+        add_service_to_hf_pricelist(test_service, self.test_hf)
+        add_item_to_hf_pricelist(test_item, self.test_hf)
 
         for i in range(nbr_claims):
             claim = Claim.objects.create(
