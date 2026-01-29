@@ -73,7 +73,7 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
 
     @classmethod
     def setUpClass(cls):
-        
+
         cls.dateclaimed = date.today() - timedelta(days=5)
         cls.datetimeclaimed = datetime.now() - timedelta(days=5)
         cls.datestart = date.today() - timedelta(days=55)
@@ -118,7 +118,6 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         cls.test_icd = Diagnosis(code='ICD00I', name='diag test', audit_user_id=-1)
         cls.test_icd.save()
 
-
     def _create_test_claims(self, product, nbr_claims=10):
         test_item = create_test_item(
             'D',
@@ -138,8 +137,8 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             test_item,
             custom_props={"price_origin": ProductItemOrService.ORIGIN_RELATIVE},
         )
-        add_service_to_hf_pricelist(test_service, hf_id=self.test_hf.id)
-        add_item_to_hf_pricelist(test_item, hf_id=self.test_hf.id)
+        add_service_to_hf_pricelist(test_service, hf_id=self.test_hf)
+        add_item_to_hf_pricelist(test_item, hf_id=self.test_hf)
 
         for i in range(nbr_claims):
             claim = Claim.objects.create(
