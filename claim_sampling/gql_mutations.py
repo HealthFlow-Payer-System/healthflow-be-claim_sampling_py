@@ -1,9 +1,4 @@
 import logging
-import uuid
-import pathlib
-import base64
-from typing import Callable, Dict
-import random
 import graphene
 
 from claim.gql_queries import ClaimGQLType
@@ -15,13 +10,8 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 
-from claim.gql_mutations import ClaimCodeInputType, ClaimGuaranteeIdInputType, FeedbackInputType
-from core.models.user import ClaimAdmin
 from claim.models import Claim
 
-from django.db import transaction
-
-from .models import ClaimSamplingBatch, ClaimSamplingBatchAssignment
 from .services import ClaimSamplingService
 
 logger = logging.getLogger(__name__)
@@ -66,7 +56,6 @@ class ClaimSamplingBatchInputType(OpenIMISMutation.Input):
     # guarantee_id = ClaimGuaranteeIdInputType(required=False)
 
 
-@transaction.atomic
 def update_or_create_claim_sampling_batch(data, user, task_group=None):
 
     service = ClaimSamplingService(user)
@@ -108,12 +97,11 @@ class CreateClaimSamplingBatchMutation(OpenIMISMutation):
             if "client_mutation_label" in data:
                 data.pop('client_mutation_label')
             # data['audit_user_id'] = user.id_for_audit
-            from core.utils import TimeUtils
             # data['validity_from'] = TimeUtils.now()
             group_id = data.get('taskGroupUuid')
 
             task_group = TaskGroup.objects.get(id=group_id) if group_id else None
-            claim_sampling_batch = update_or_create_claim_sampling_batch(data, user, task_group)
+            update_or_create_claim_sampling_batch(data, user, task_group)
             return None
         except Exception as exc:
             from django.conf import settings
@@ -122,7 +110,7 @@ class CreateClaimSamplingBatchMutation(OpenIMISMutation):
                 logging.debug("Error in claim sampling mutation: ", exc)
                 traceback.print_exc()
             return [{
-                'message': _("claim.mutation.failed_to_create_claim_sampling_batch") % {'code': data['code']},
+                'message': _("claim.mutation.failed_to_create_claim_sampling_batch"),
                 'detail': str(exc)}]
 
 

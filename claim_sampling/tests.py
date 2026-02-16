@@ -1,14 +1,11 @@
-from graphql_jwt.shortcuts import get_token
-from django.test import TestCase
-from unittest import mock
-
-from claim.services import ClaimSubmitService
+import uuid
+from claim.services import processing_claim, ClaimSubmitService
 from core.test_helpers import create_test_interactive_user, create_test_officer
-from location.test_helpers import create_test_location, create_test_health_facility, create_test_village
+from location.test_helpers import create_test_health_facility, create_test_village
 from insuree.test_helpers import create_test_insuree
-from claim.test_helpers import create_test_claim_admin, create_test_claim, mark_test_claim_as_processed
+from claim.test_helpers import create_test_claim_admin
 from claim.models import Claim, ClaimItem, ClaimService, ClaimDetail
-from medical.models import Diagnosis, Item, Service
+from medical.models import Diagnosis
 from medical.test_helpers import create_test_item, create_test_service
 from django.conf import settings
 from .models import (
@@ -16,13 +13,21 @@ from .models import (
     ClaimSamplingBatchAssignment,
     ClaimSamplingBatchAssignmentStatus
 )
-
+import random
 from .services import ClaimSamplingService
 import core
-from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase, BaseTestContext as DummyContext
+from core.models.openimis_graphql_test_case import openIMISGraphQLTestCase, BaseTestContext
+from django.db.models import (
+    Q, Sum, ExpressionWrapper, DecimalField
+)
+from claim.subqueries import (
+    total_srv_adjusted_exp,
+    total_itm_adjusted_exp,
+    total_srv_approved_exp,
+    total_itm_approved_exp
+)
 
 from graphene import Schema
-from graphene_django.utils.testing import GraphQLTestCase
 from claim_sampling import schema as claim_schema
 from graphene.test import Client
 from policy.test_helpers import create_test_policy2
@@ -30,6 +35,8 @@ from product.test_helpers import create_test_product, create_test_product_servic
 from medical_pricelist.test_helpers import add_service_to_hf_pricelist, add_item_to_hf_pricelist
 from product.models import ProductItemOrService
 from datetime import date, timedelta, datetime
+
+
 class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     GRAPHQL_URL = f'/{settings.SITE_ROOT()}graphql'
     # This is required by some version of graphene but is never used. It should be set to the schema but the import
@@ -50,21 +57,34 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
     test_ward = None
 
     admin_user = None
+    admin_token = None
     schema = None
 
     test_claims = []
 
+    def tearDown(self):
+        # atomic rollback issue is teardown is called
+        pass
 
     @classmethod
-    def setUpTestData(cls):
-        cls.admin_user = create_test_interactive_user(username="testLocationAdmin")
-        cls.admin_token = get_token(cls.admin_user, DummyContext(user=cls.admin_user))
+    def tearDownClass(cls):
+        # atomic rollback issue is teardown is called
+        pass
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.dateclaimed = date.today() - timedelta(days=5)
+        cls.datetimeclaimed = datetime.now() - timedelta(days=5)
+        cls.datestart = date.today() - timedelta(days=55)
         cls.schema = Schema(
             query=claim_schema.Query,
             mutation=claim_schema.Mutation
         )
         cls.graph_client = Client(cls.schema)
-
+        cls.admin_user = create_test_interactive_user(username="testLocationAdmin")
+        cls.admin_context = BaseTestContext(user=cls.admin_user)
+        cls.admin_token = BaseTestContext(user=cls.admin_user).get_jwt()
         cls.officer = create_test_officer(custom_props={"code": "TSTSIMP1"})
 
         if cls.test_region is None:
@@ -75,8 +95,8 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
 
         cls.test_hf = create_test_health_facility("1", cls.test_district.id, valid=True)
         props = dict(
-            last_name="name",
-            other_names="surname",
+            last_name="claim",
+            other_names="sampling",
             dob=core.datetime.date(2000, 1, 13),
             chf_id="884930485",
         )
@@ -84,26 +104,28 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             location=cls.test_village,
         )
         cls.test_insuree = create_test_insuree(is_head=True, custom_props=props, family_custom_props=family_props)
-        product = create_test_product("TEST_CLM")
-        cls.test_policy , ip = create_test_policy2(product, cls.test_insuree)
+        product = create_test_product("T_CLMSMP")
+        cls.test_policy, ip = create_test_policy2(
+            product,
+            cls.test_insuree,
+            custom_props={
+                "enroll_date": cls.datestart,
+                "start_date": cls.datestart,
+                "validity_from": cls.datestart,
+                "effective_date": cls.datestart,
+            })
         cls.test_claim_admin = create_test_claim_admin()
         cls.test_icd = Diagnosis(code='ICD00I', name='diag test', audit_user_id=-1)
         cls.test_icd.save()
 
-        cls._create_test_claims(cls.test_policy.product)
-        
-
-    @classmethod
-    def _create_test_claims(cls, product):
-        configdate = datetime.now() - timedelta(days=265)
-
+    def _create_test_claims(self, product, nbr_claims=10):
         test_item = create_test_item(
             'D',
-            custom_props={"code": "csamCo", "price": 1000 }
+            custom_props={"code": "TI-001", "price": 1000, "care_type": "B"}
         )
         test_service = create_test_service(
             'D',
-            custom_props={"code": "ssamCo", "price": 1000}
+            custom_props={"code": "TS-001", "price": 1000, "care_type": "B"}
         )
         create_test_product_service(
             product,
@@ -115,27 +137,25 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
             test_item,
             custom_props={"price_origin": ProductItemOrService.ORIGIN_RELATIVE},
         )
-        add_service_to_hf_pricelist(test_service, hf_id=cls.test_hf.id)
-        add_item_to_hf_pricelist(test_item, hf_id=cls.test_hf.id)
-        
-        dateclaim = date.today() - timedelta(days=5)
-        datetimeclaim = datetime.now() - timedelta(days=5)
-        for i in range(10):
+        add_service_to_hf_pricelist(test_service, self.test_hf)
+        add_item_to_hf_pricelist(test_item, self.test_hf)
+
+        for i in range(nbr_claims):
             claim = Claim.objects.create(
-                date_claimed=dateclaim,
+                date_claimed=self.dateclaimed,
                 code=F"code_ABV{i}",
-                icd=cls.test_icd,
+                icd=self.test_icd,
                 claimed=2000,
-                date_from=dateclaim,
+                date_from=self.dateclaimed,
                 date_to=None,
-                admin=cls.test_claim_admin,
-                insuree=cls.test_insuree,
-                health_facility=cls.test_hf,
+                admin=self.test_claim_admin,
+                insuree=self.test_insuree,
+                health_facility=self.test_hf,
                 status=Claim.STATUS_ENTERED,
                 audit_user_id=-1,
-                validity_from=datetimeclaim
+                validity_from=self.datetimeclaimed
             )
-            claim_item = ClaimItem.objects.create(
+            ClaimItem.objects.create(
                 claim=claim,
                 item=test_item,
                 price_asked=1000,
@@ -143,21 +163,22 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
                 availability=True,
-                validity_from=datetimeclaim
+                validity_from=self.datetimeclaimed
             )
-            claim_service = ClaimService.objects.create(
+            ClaimService.objects.create(
                 claim=claim,
                 service=test_service,
                 price_asked=1000,
                 qty_provided=1,
                 audit_user_id=-1,
                 status=ClaimDetail.STATUS_PASSED,
-                validity_from=datetimeclaim
+                validity_from=self.datetimeclaimed
             )
+            ClaimSubmitService(self.admin_user).submit_claim(claim)
+            processing_claim(claim, self.admin_user, False)
             claim.refresh_from_db()
-            ClaimSubmitService(cls.admin_user).submit_claim(claim)
-            cls.test_claims.append(claim)
-        
+            self.test_claims.append(claim)
+
     @classmethod
     def _set_claim_as_valuated(cls, claim, user, is_process=False):
         # Mock of dedrem
@@ -165,26 +186,24 @@ class ClaimSubmitServiceTestCase(openIMISGraphQLTestCase):
         claim.save()
         return []
 
-    def test_mutation_create_claim( self):
-        
-        percentage_for_sample = 20
+    def test_mutation_create_claim(self):
+        self._create_test_claims(self.test_policy.product, nbr_claims=10)
+        percentage_for_sample = 30
         mutation = f'''
 mutation {{
   createClaimSamplingBatch(
     input: {{
-      clientMutationId: "fdcc211f-7225-4f0e-8a66-11223344667d"
-      clientMutationLabel: "Create Claim Sampling Batch" 
-      percentage: 30
-      filters: "{{\\"status\\":4, \\"dateFrom\\": \\"{date.today() - timedelta(days=5)}\\"}}"        
-    }}      
+      clientMutationId: "{str(uuid.uuid4())}"
+      clientMutationLabel: "Create Claim Sampling Batch"
+      percentage: {percentage_for_sample}
+      filters: "{{\\"status\\":4, \\"dateClaimed\\": \\"{self.dateclaimed}\\"}}"
+    }}
   ) {{
     clientMutationId
     internalId
-  }}    
-}}
-            '''
-        response = self.send_mutation_raw(mutation,self.admin_token )
-        
+  }}
+}}'''
+        self.send_mutation_raw(mutation, self.admin_token)
 
         claim_sampling = ClaimSamplingBatch.objects.first()
         self.assertIsNotNone(claim_sampling)
@@ -195,45 +214,66 @@ mutation {{
         skip = list(attachments.filter(status=ClaimSamplingBatchAssignmentStatus.SKIPPED))
 
         # Creation
-        self.assertEqual(len(idle), 3)
-        self.assertEqual(len(skip), 7)
+        percentage_expected = round(percentage_for_sample * len(attachments) / 100)
+        self.assertEqual(len(idle), percentage_expected)
+        self.assertEqual(len(skip), len(attachments) - percentage_expected)
         self.assertEqual(idle[0].claim.review_status, Claim.REVIEW_SELECTED)
         self.assertEqual(idle[1].claim.review_status, Claim.REVIEW_SELECTED)
         self.assertEqual(idle[2].claim.review_status, Claim.REVIEW_SELECTED)
-
+        status = [Claim.STATUS_PROCESSED, Claim.STATUS_REJECTED]
+        rejected = 0
         # Summary
-        claim_1, claim_2, claim_3 = idle[0].claim, idle[1].claim, idle[2].claim
-        claim_1.review_status = Claim.REVIEW_DELIVERED
-        claim_1.status = Claim.STATUS_PROCESSED
-        claim_1.save()
-
-        claim_2.review_status = Claim.REVIEW_DELIVERED
-        claim_2.status = Claim.STATUS_REJECTED
-        claim_2.save()
-
-        claim_3.review_status = Claim.REVIEW_DELIVERED
-        claim_3.status = Claim.STATUS_REJECTED
-        claim_3.save()
+        for sclaim in idle:
+            claim, = sclaim.claim,
+            claim.review_status = Claim.REVIEW_DELIVERED
+            claim.status = random.choices(status)[0]
+            if claim.status == Claim.STATUS_REJECTED:
+                rejected += 1
+            claim.save()
 
         service = ClaimSamplingService(self.admin_user)
         rejected_from_review, reviewed_delivered, total = service.prepare_sampling_summary(claim_sampling.id)
-        self.assertEqual(rejected_from_review.count(), 2)
-        self.assertEqual(reviewed_delivered.count(), 3)
-        self.assertEqual(total, 3)
-        datetimeclaim = datetime.now() - timedelta(days=5)
+        self.assertEqual(rejected_from_review.count(), rejected)
+        self.assertEqual(reviewed_delivered.count(), len(idle))
+        self.assertEqual(total, len(idle))
+        qs = Claim.objects.filter(assignments__claim_batch=claim_sampling, *Claim.filter_validity())
+
+        ratio_before = qs.filter(review_status=Claim.REVIEW_DELIVERED)\
+            .filter(Q(services__rejection_reason__lte=0) | Q(services__rejection_reason__isnull=True))\
+            .annotate(total_srv_adjusted=total_srv_adjusted_exp)\
+            .annotate(total_itm_adjusted=total_itm_adjusted_exp)\
+            .annotate(total_srv_approved=total_srv_approved_exp)\
+            .annotate(total_itm_approved=total_itm_approved_exp)\
+            .aggregate(value=ExpressionWrapper(
+                (Sum("total_srv_approved") + Sum("total_itm_approved")) /
+                (Sum("total_srv_adjusted") + Sum("total_itm_adjusted")),
+                output_field=DecimalField()
+            ))["value"]
 
         # Extrapolation
         service.extrapolate_results(claim_sampling.id)
         attachments = ClaimSamplingBatchAssignment.objects.filter(claim_batch=claim_sampling)
         # 50% of remaining claims should be rejected and 50% should be valuated
         skip = [x.claim for x in attachments.filter(status=ClaimSamplingBatchAssignmentStatus.SKIPPED)]
-        accepted = [x for x in skip if x.status in [ Claim.STATUS_PROCESSED, Claim.STATUS_VALUATED]]
+        accepted = [x for x in skip if x.status in [Claim.STATUS_PROCESSED, Claim.STATUS_VALUATED]]
         rejected = [x for x in skip if x.status in [Claim.STATUS_REJECTED]]
-        self.assertEqual(len(accepted), 7)
+        self.assertEqual(len(accepted), len(skip))
         self.assertEqual(len(rejected), 0)
-        
-        # FIXME check the ratio (done manually looks ok)
-        
+
+        qs = Claim.objects.filter(assignments__claim_batch=claim_sampling, *Claim.filter_validity())
+
+        ratio_after = qs.filter(review_status=Claim.REVIEW_DELIVERED)\
+            .filter(Q(services__rejection_reason__lte=0) | Q(services__rejection_reason__isnull=True))\
+            .annotate(total_srv_adjusted=total_srv_adjusted_exp)\
+            .annotate(total_itm_adjusted=total_itm_adjusted_exp)\
+            .annotate(total_srv_approved=total_srv_approved_exp)\
+            .annotate(total_itm_approved=total_itm_approved_exp)\
+            .aggregate(value=ExpressionWrapper(
+                (Sum("total_srv_approved") + Sum("total_itm_approved")) /
+                (Sum("total_srv_adjusted") + Sum("total_itm_adjusted")),
+                output_field=DecimalField()
+            ))["value"]
+        self.assertEqual(ratio_before, ratio_after)
 
     def _get_test_dict(self, code=None):
         return {

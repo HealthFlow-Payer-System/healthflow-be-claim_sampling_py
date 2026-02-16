@@ -1,5 +1,5 @@
 import graphene
-from core import prefix_filterset, ExtendedConnection
+from core import ExtendedConnection
 from graphene_django import DjangoObjectType
 from .apps import ClaimSamplingConfig
 from .models import Claim
@@ -76,4 +76,3 @@ class ClaimSamplingSummaryGQLType(graphene.ObjectType):
     deductible_percentage = graphene.Float(description="Percentage of claims rejected during review - deductibles.")
     reviewed_percentage = graphene.Float(description="Percentage of reviewed claims in batch.")
     total_claims_in_batch = graphene.Int(description="Total number of claims selected for review in sampling batch")
-

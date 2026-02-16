@@ -28,8 +28,8 @@ class Migration(migrations.Migration):
                 ('is_applied', models.BooleanField()),
                 ('computed_value', models.JSONField(blank=True, db_column='ComputedValue', null=True)),
                 ('assigned_value', models.JSONField(blank=True, db_column='AssignedValue', null=True)),
-                ('assigned_to', models.ForeignKey(db_column='AssignedTo', on_delete=django.db.models.deletion.DO_NOTHING, related_name='AssignedTo', to='claim.claimadmin')),
-                ('created_by', models.ForeignKey(db_column='CreatedBy', on_delete=django.db.models.deletion.DO_NOTHING, related_name='CreatedBy', to='claim.claimadmin')),
+                ('assigned_to', models.ForeignKey(db_column='AssignedTo', on_delete=django.db.models.deletion.DO_NOTHING, related_name='AssignedTo', to='core.claimadmin')),
+                ('created_by', models.ForeignKey(db_column='CreatedBy', on_delete=django.db.models.deletion.DO_NOTHING, related_name='CreatedBy', to='core.claimadmin')),
             ],
             options={
                 'db_table': 'claim_ClaimSamplingBatch',
